@@ -188,6 +188,10 @@ body {
 .player-chip .dot {
   width: 9px; height: 9px; border-radius: 50%; flex: none;
 }
+.player-chip .chip-avatar {
+  width: 26px; height: 26px; border-radius: 50%; object-fit: cover;
+  border: 1.5px solid rgba(255,255,255,0.2); flex: none;
+}
 .player-chip .del-chip {
   display: none; margin-left: 2px; cursor: pointer;
   width: 18px; height: 18px; border-radius: 50%;
@@ -836,6 +840,15 @@ select.ct-input { -webkit-appearance: none; appearance: none; }
     <div id="adminSection" style="display:none;">
       <div class="card-title" style="margin-top:14px;"><span class="icon">🔧</span> Admin — Utenti registrati</div>
       <div class="card" id="adminUsersList"></div>
+      <div class="card-title" style="margin-top:14px;"><span class="icon">⚠️</span> Zona pericolosa</div>
+      <div class="card" style="border-color:rgba(212,66,58,0.3);">
+        <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:12px;">
+          Cancella tutte le partite salvate. Questa operazione è irreversibile.
+        </div>
+        <button class="btn-danger" id="clearHistoryBtn" style="width:100%;padding:12px;font-size:.9rem;">
+          🗑️ Svuota storico partite
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1138,6 +1151,12 @@ function goToStep(n) {
 // ============================================================
 let editingPlayers = false;
 
+function getPlayerPhoto(name) {
+  const local = JSON.parse(Store.get('ct_users') || '{}');
+  const key = String(name).trim().toLowerCase();
+  return (local[key] && local[key].photoURL) ? local[key].photoURL : null;
+}
+
 function renderPlayers() {
   const grid = document.getElementById('playerGrid');
   const msg = document.getElementById('noPlayersMsg');
@@ -1146,7 +1165,11 @@ function renderPlayers() {
   players.forEach((p, i) => {
     const chip = document.createElement('div');
     chip.className = 'player-chip' + (selectedPlayers.has(p.name) ? ' selected' : '');
-    chip.innerHTML = `<div class="dot" style="background:${p.color}"></div>
+    const photo = getPlayerPhoto(p.name);
+    const avatarHtml = photo
+      ? `<img class="chip-avatar" src="${photo}" alt="${p.name}">`
+      : `<div class="dot" style="background:${p.color}"></div>`;
+    chip.innerHTML = `${avatarHtml}
       <span>${p.name}</span>
       <button class="del-chip" data-name="${p.name}">×</button>`;
     chip.addEventListener('click', (e) => {
@@ -2101,6 +2124,29 @@ async function renderAdminUsers() {
     </div>`;
   }).join('');
 }
+
+async function clearHistory() {
+  if (!confirm('Sei sicuro? Tutte le partite verranno cancellate definitivamente.')) return;
+  if (!confirm('Ultima conferma: stai per cancellare tutto lo storico. Continuare?')) return;
+
+  // Cancella da Firestore
+  if (fbOk) {
+    try {
+      const snap = await db.collection('matches').get();
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    } catch(e) { console.warn('Errore cancellazione Firestore:', e); }
+  }
+
+  // Cancella in locale
+  matches = [];
+  saveLocal();
+  showToast('✅ Storico cancellato');
+  renderProfile();
+}
+
+document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
 
 async function deleteUser(username) {
   if (!confirm(`Rimuovere ${username}?`)) return;
