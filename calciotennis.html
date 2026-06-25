@@ -1821,21 +1821,31 @@ function computeStats() {
   // Streak e forma giocatori (partite ordinate newest-first)
   Object.keys(playerStats).forEach(name => {
     const ps = playerStats[name];
+
+    // --- FORMA: ultime 5 partite giocate, indipendentemente dallo streak ---
+    const forma = [];
+    for (const m of matches) {
+      if (forma.length >= 5) break;
+      const wT = m.winner === 'A' ? m.teamA : m.teamB;
+      const lT = m.winner === 'A' ? m.teamB : m.teamA;
+      const won = wT.includes(name), lost = lT.includes(name);
+      if (!won && !lost) continue; // non ha giocato questa partita, salta
+      forma.push(won ? 'W' : 'L');
+    }
+    ps.forma = forma;
+
+    // --- STREAK: serie consecutiva di V o S nelle partite giocate ---
     let streak = 0, sType = '';
-    const forma = []; // ultime 5 partite: 'W' | 'L'
     for (const m of matches) {
       const wT = m.winner === 'A' ? m.teamA : m.teamB;
       const lT = m.winner === 'A' ? m.teamB : m.teamA;
       const won = wT.includes(name), lost = lT.includes(name);
-      if (!won && !lost) continue; // salta partite in cui non ha giocato, non rompe lo streak
-      if (forma.length < 5) forma.push(won ? 'W' : 'L');
+      if (!won && !lost) continue; // non ha giocato, non interrompe lo streak
       if (!sType) sType = won ? 'W' : 'L';
       if ((sType === 'W' && won) || (sType === 'L' && lost)) streak++;
-      else if (streak === 0) { sType = won ? 'W' : 'L'; streak = 1; }
-      else break;
+      else break; // risultato diverso: streak finita
     }
     ps.streak = streak; ps.streakType = sType;
-    ps.forma = forma; // array newest-first
   });
 
   // Streak squadre
