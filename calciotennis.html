@@ -915,7 +915,14 @@ const Store = (() => {
 let players = JSON.parse(Store.get('ct_players') || '[]');
 if (!players.length) players = []; // primo avvio
 
-let matches = JSON.parse(Store.get('ct_matches') || '[]');
+let matches = (function() {
+  const raw = JSON.parse(Store.get('ct_matches') || '[]');
+  const norm = n => String(n).trim().toLowerCase();
+  return raw.map(m => Object.assign({}, m, {
+    teamA: Array.isArray(m.teamA) ? m.teamA.map(norm) : [],
+    teamB: Array.isArray(m.teamB) ? m.teamB.map(norm) : []
+  }));
+})();
 
 // Stato partita corrente
 let selectedPlayers = new Set();
@@ -1027,7 +1034,7 @@ async function doRegister() {
   if (password.length < 4) { showAuthError('Password troppo corta (min 4 caratteri)'); return; }
 
   const hash = await hashPassword(password);
-  const userData = { username, passwordHash: hash, photoURL: '', createdAt: new Date().toISOString() };
+  const userData = { username: username.trim().toLowerCase(), passwordHash: hash, photoURL: '', createdAt: new Date().toISOString() };
 
   if (fbOk) {
     try {
@@ -1178,7 +1185,7 @@ document.getElementById('newPlayerInput').addEventListener('keydown', e => { if 
 
 function addPlayer() {
   const inp = document.getElementById('newPlayerInput');
-  const name = inp.value.trim();
+  const name = inp.value.trim().toLowerCase();
   if (!name || players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
     inp.value = ''; return;
   }
@@ -1641,8 +1648,8 @@ function saveMatch() {
 
   const matchData = {
     date: new Date().toISOString(),
-    teamA: [...teamA],
-    teamB: [...teamB],
+    teamA: [...teamA].map(n => String(n).trim().toLowerCase()),
+    teamB: [...teamB].map(n => String(n).trim().toLowerCase()),
     scoreA: sA,
     scoreB: sB,
     winner,
@@ -1784,27 +1791,39 @@ function renderHistory() {
 // ============================================================
 // STATISTICS
 // ============================================================
+// Normalizza i nomi in una partita (retrocompatibilità con dati salvati in mixed case)
+function normalizeMatch(m) {
+  const norm = n => String(n).trim().toLowerCase();
+  return Object.assign({}, m, {
+    teamA: Array.isArray(m.teamA) ? m.teamA.map(norm) : [],
+    teamB: Array.isArray(m.teamB) ? m.teamB.map(norm) : [],
+  });
+}
+
 function computeStats() {
   const playerStats = {}; // name -> { w, l, money, streak, streakType }
   const teamStats = {};   // key -> { players[], size, w, l, streak, streakType }
 
   matches.forEach(m => {
+    if (!m.teamA || !m.teamB || !m.winner) return; // skip partite malformate
     const winTeam = m.winner === 'A' ? [...m.teamA] : [...m.teamB];
     const loseTeam = m.winner === 'A' ? [...m.teamB] : [...m.teamA];
-    const perLoserLoss = m.stake;
-    const perWinnerGain = m.stake * loseTeam.length / winTeam.length;
+    const perLoserLoss = m.stake || 0;
+    const perWinnerGain = (m.stake || 0) * loseTeam.length / winTeam.length;
     const is1v1 = winTeam.length === 1 && loseTeam.length === 1;
 
     // Stats individuali: sempre aggiornate, anche in 1v1
     winTeam.forEach(p => {
-      if (!playerStats[p]) playerStats[p] = { w:0, l:0, money:0 };
-      playerStats[p].w++;
-      playerStats[p].money += perWinnerGain;
+      const key = String(p).trim().toLowerCase();
+      if (!playerStats[key]) playerStats[key] = { w:0, l:0, money:0 };
+      playerStats[key].w++;
+      playerStats[key].money += perWinnerGain;
     });
     loseTeam.forEach(p => {
-      if (!playerStats[p]) playerStats[p] = { w:0, l:0, money:0 };
-      playerStats[p].l++;
-      playerStats[p].money -= perLoserLoss;
+      const key = String(p).trim().toLowerCase();
+      if (!playerStats[key]) playerStats[key] = { w:0, l:0, money:0 };
+      playerStats[key].l++;
+      playerStats[key].money -= perLoserLoss;
     });
 
     // Stats squadre: solo se NON è 1v1
@@ -1822,28 +1841,31 @@ function computeStats() {
   Object.keys(playerStats).forEach(name => {
     const ps = playerStats[name];
 
-    // --- FORMA: ultime 5 partite giocate, indipendentemente dallo streak ---
+    // Helper: controlla se un nome è in un array, insensibile a maiuscole/trim
+    const inTeam = (arr, n) => Array.isArray(arr) && arr.some(x => String(x).trim().toLowerCase() === String(n).trim().toLowerCase());
+
+    // --- FORMA: ultime 5 partite giocate ---
     const forma = [];
     for (const m of matches) {
       if (forma.length >= 5) break;
-      const wT = m.winner === 'A' ? m.teamA : m.teamB;
-      const lT = m.winner === 'A' ? m.teamB : m.teamA;
-      const won = wT.includes(name), lost = lT.includes(name);
-      if (!won && !lost) continue; // non ha giocato questa partita, salta
+      if (!m.teamA || !m.teamB || !m.winner) continue; // partita malformata
+      const won = inTeam(m.winner === 'A' ? m.teamA : m.teamB, name);
+      const lost = inTeam(m.winner === 'A' ? m.teamB : m.teamA, name);
+      if (!won && !lost) continue;
       forma.push(won ? 'W' : 'L');
     }
     ps.forma = forma;
 
-    // --- STREAK: serie consecutiva di V o S nelle partite giocate ---
+    // --- STREAK: serie consecutiva ---
     let streak = 0, sType = '';
     for (const m of matches) {
-      const wT = m.winner === 'A' ? m.teamA : m.teamB;
-      const lT = m.winner === 'A' ? m.teamB : m.teamA;
-      const won = wT.includes(name), lost = lT.includes(name);
-      if (!won && !lost) continue; // non ha giocato, non interrompe lo streak
+      if (!m.teamA || !m.teamB || !m.winner) continue;
+      const won = inTeam(m.winner === 'A' ? m.teamA : m.teamB, name);
+      const lost = inTeam(m.winner === 'A' ? m.teamB : m.teamA, name);
+      if (!won && !lost) continue;
       if (!sType) sType = won ? 'W' : 'L';
       if ((sType === 'W' && won) || (sType === 'L' && lost)) streak++;
-      else break; // risultato diverso: streak finita
+      else break;
     }
     ps.streak = streak; ps.streakType = sType;
   });
@@ -1873,12 +1895,12 @@ function renderStats() {
 
   // ---- Giocatori ----
   const grid = document.getElementById('playerStatsGrid');
-  const playerNames = players.map(p=>p.name).filter(n=>playerStats[n]);
+  const playerNames = players.map(p=>p.name).filter(n=>playerStats[String(n).trim().toLowerCase()]);
   if (!playerNames.length) {
     grid.innerHTML = '<div class="empty-state" style="grid-column:span 2">Nessuna partita ancora.</div>';
   } else {
     grid.innerHTML = playerNames.map(name => {
-      const ps = playerStats[name];
+      const ps = playerStats[String(name).trim().toLowerCase()];
       const total = ps.w + ps.l;
       const winPct = total ? Math.round(ps.w/total*100) : 0;
       const moneyClass = ps.money > 0 ? 'positive' : ps.money < 0 ? 'negative' : 'neutral';
@@ -2175,9 +2197,10 @@ async function initApp() {
 
       // 2. Carica matches
       const matchSnap = await db.collection('matches').orderBy('date','desc').get();
-      const fbMatches = matchSnap.docs.map(d => d.data());
+      const fbMatches = matchSnap.docs.map(d => normalizeMatch(d.data()));
       const localIds = new Set(matches.map(m=>m.id));
       fbMatches.forEach(m => { if(!localIds.has(m.id)) matches.push(m); });
+      matches = matches.map(normalizeMatch);
       matches.sort((a,b) => new Date(b.date) - new Date(a.date));
       saveLocal();
     } catch(e) {
