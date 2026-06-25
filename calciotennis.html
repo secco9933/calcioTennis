@@ -2142,32 +2142,40 @@ function compressImage(file, maxSize, quality, callback) {
 // INIT + LOAD FROM FIREBASE
 // ============================================================
 async function initApp() {
-  renderPlayers();
   goToStep(0);
   wheelResize();
   window.addEventListener('resize', wheelResize);
 
-  // Carica matches da Firebase
   if (fbOk) {
     try {
-      const snap = await db.collection('matches').orderBy('date','desc').get();
-      const fbMatches = snap.docs.map(d => d.data());
+      // 1. Carica tutti gli utenti registrati e aggiorna la lista giocatori
+      const usersSnap = await db.collection('users').get();
+      const local = JSON.parse(Store.get('ct_users') || '{}');
+      usersSnap.docs.forEach(d => {
+        const userData = d.data();
+        // Aggiorna cache locale
+        local[d.id] = userData;
+        // Aggiungi alla lista giocatori se non c'è già
+        if (!players.some(p => p.name === d.id)) {
+          players.push({ name: d.id, color: PALETTE[players.length % PALETTE.length] });
+        }
+      });
+      Store.set('ct_users', JSON.stringify(local));
+      saveLocal();
+
+      // 2. Carica matches
+      const matchSnap = await db.collection('matches').orderBy('date','desc').get();
+      const fbMatches = matchSnap.docs.map(d => d.data());
       const localIds = new Set(matches.map(m=>m.id));
       fbMatches.forEach(m => { if(!localIds.has(m.id)) matches.push(m); });
       matches.sort((a,b) => new Date(b.date) - new Date(a.date));
       saveLocal();
-
-      // Sincronizza anche utenti in locale
-      const usersSnap = await db.collection('users').get();
-      const local = JSON.parse(Store.get('ct_users') || '{}');
-      usersSnap.docs.forEach(d => {
-        if (!local[d.id]) local[d.id] = d.data();
-      });
-      Store.set('ct_users', JSON.stringify(local));
     } catch(e) {
       console.warn('Firebase load failed:', e);
     }
   }
+
+  renderPlayers();
 }
 
 // ============================================================
