@@ -1136,12 +1136,24 @@ async function doLogin() {
 
   if (fbOk) {
     try {
-      const snap = await col('users').doc(username).get();
+      // Cerca prima nella stanza corrente, poi nella root (retrocompatibilità)
+      let snap = await col('users').doc(username).get();
+      if (!snap.exists) {
+        snap = await db.collection('users').doc(username).get();
+        // Se trovato nella root, migra automaticamente nella stanza
+        if (snap.exists) {
+          await col('users').doc(username).set(snap.data());
+        }
+      }
       if (!snap.exists) { showAuthError('Utente non trovato'); return; }
       const userData = snap.data();
       const hash = await hashPassword(password);
       if (hash !== userData.passwordHash) { showAuthError('Password errata'); return; }
       currentUser = { username, photoURL: userData.photoURL || '', createdAt: userData.createdAt, isAdmin: username === ADMIN_USERNAME };
+      // Aggiorna cache locale
+      const lu = JSON.parse(Store.get('ct_users') || '{}');
+      lu[username] = userData;
+      Store.set('ct_users', JSON.stringify(lu));
     } catch(e) {
       // Fallback locale
       if (!localUsers[username]) { showAuthError('Utente non trovato'); return; }
@@ -1241,7 +1253,11 @@ async function tryAutoLogin() {
   }
   if (fbOk) {
     try {
-      const snap = await col('users').doc(saved).get();
+      let snap = await col('users').doc(saved).get();
+      if (!snap.exists) {
+        snap = await db.collection('users').doc(saved).get();
+        if (snap.exists) await col('users').doc(saved).set(snap.data());
+      }
       if (snap.exists) {
         const d = snap.data();
         currentUser = { username: saved, photoURL: d.photoURL || '', createdAt: d.createdAt, isAdmin: saved === ADMIN_USERNAME };
