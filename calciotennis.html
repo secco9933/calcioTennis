@@ -974,6 +974,15 @@ select.ct-input { -webkit-appearance: none; appearance: none; }
           🗑️ Svuota storico partite
         </button>
       </div>
+      <div class="card-title" style="margin-top:14px;"><span class="icon">📦</span> Migrazione dati</div>
+      <div class="card">
+        <div style="font-size:.82rem;color:var(--text-dim);margin-bottom:12px;">
+          Copia i dati dalla root di Firestore nella stanza corrente. Usare una volta sola.
+        </div>
+        <button class="btn-ghost" id="migrateBtn" style="width:100%;padding:12px;font-size:.9rem;">
+          📦 Migra root → stanza corrente
+        </button>
+      </div>
     </div>
   </div>
 
@@ -2573,6 +2582,42 @@ async function clearHistory() {
 }
 
 document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
+
+document.getElementById('migrateBtn').addEventListener('click', async () => {
+  if (!fbOk) { showToast('Firebase non connesso'); return; }
+  document.getElementById('migrateBtn').textContent = '⏳ Migrazione in corso...';
+  document.getElementById('migrateBtn').disabled = true;
+  let count = 0;
+  try {
+    // Migra matches
+    const matchSnap = await db.collection('matches').get();
+    for (const doc of matchSnap.docs) {
+      await col('matches').doc(doc.id).set(doc.data());
+      count++;
+    }
+    // Migra users
+    const userSnap = await db.collection('users').get();
+    for (const doc of userSnap.docs) {
+      await col('users').doc(doc.id).set(doc.data());
+    }
+    // Migra meta/debts
+    try {
+      const debts = await db.collection('meta').doc('debts').get();
+      if (debts.exists) await col('meta').doc('debts').set(debts.data());
+    } catch(e) {}
+    // Crea documento stanza
+    await db.collection('rooms').doc(currentRoom).set({ createdAt: new Date().toISOString(), createdBy: currentUser.username });
+    showToast('✅ Migrati ' + count + ' documenti in ' + currentRoom);
+    document.getElementById('migrateBtn').textContent = '✅ Migrazione completata!';
+    // Ricarica i dati
+    setTimeout(() => { initApp(); }, 1500);
+  } catch(e) {
+    showToast('Errore: ' + e.message);
+    document.getElementById('migrateBtn').textContent = '📦 Migra root → stanza corrente';
+    document.getElementById('migrateBtn').disabled = false;
+    console.error(e);
+  }
+});
 
 async function deleteUser(username) {
   if (!confirm(`Rimuovere ${username}?`)) return;
