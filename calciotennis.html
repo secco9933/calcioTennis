@@ -1008,79 +1008,6 @@ const firebaseConfig = {
 const INVITE_CODE = "campo2025";  // ← cambia il codice invito qui
 const ADMIN_USERNAME = "secco";   // ← il tuo username admin
 
-// ============================================================
-// STANZE
-// ============================================================
-let currentRoom = Store.get('ct_room') || 'DIOGAI'; // stanza di default
-
-// Helper: ritorna la sub-collection della stanza corrente
-function col(collectionName) {
-  if (!db) return null;
-  return db.collection('rooms').doc(currentRoom).collection(collectionName);
-}
-
-function setRoom(roomName) {
-  currentRoom = roomName;
-  Store.set('ct_room', roomName);
-  document.getElementById('roomBadgeLabel').textContent = roomName;
-  // Resetta dati locali e ricarica
-  matches = [];
-  players = [];
-  pendingDebts = [];
-  Store.set('ct_matches', '[]');
-  Store.set('ct_debts', '[]');
-  closeRoomModal();
-  initApp();
-  showToast('🏠 Stanza: ' + roomName);
-}
-
-function openRoomModal() {
-  document.getElementById('roomModal').classList.add('open');
-  renderRoomList();
-  // Mostra creazione solo per admin
-  if (currentUser && currentUser.isAdmin) {
-    document.getElementById('adminRoomCreate').style.display = 'block';
-  }
-}
-function closeRoomModal() {
-  document.getElementById('roomModal').classList.remove('open');
-}
-
-async function renderRoomList() {
-  const listEl = document.getElementById('roomList');
-  listEl.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem;">Caricamento...</div>';
-  let rooms = ['DIOGAI']; // default sempre presente
-  if (fbOk) {
-    try {
-      const snap = await db.collection('rooms').get();
-      if (!snap.empty) rooms = snap.docs.map(d => d.id);
-      if (!rooms.includes('DIOGAI')) rooms.unshift('DIOGAI');
-    } catch(e) { console.warn('rooms load:', e); }
-  }
-  listEl.innerHTML = rooms.map(r => `
-    <div class="room-option ${r === currentRoom ? 'active-room' : ''}" onclick="setRoom('${r}')">
-      <span>${r}</span>
-      ${r === currentRoom ? '<span class="room-check">✓</span>' : ''}
-    </div>`).join('');
-}
-
-async function createRoom(name) {
-  const clean = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
-  if (!clean) { showToast('Nome non valido'); return; }
-  if (fbOk) {
-    try {
-      // Crea un documento segnaposto nella stanza
-      await db.collection('rooms').doc(clean).set({ createdAt: new Date().toISOString(), createdBy: currentUser.username });
-    } catch(e) { console.warn('create room:', e); }
-  }
-  document.getElementById('newRoomInput').value = '';
-  setRoom(clean);
-}
-
-// Chiudi modal cliccando fuori
-document.getElementById('roomModal').addEventListener('click', function(e) {
-  if (e.target === this) closeRoomModal();
-});
 const PALETTE = [
   '#ff3b30','#3a9fff','#34c759','#ffcc00','#af52de',
   '#ff9500','#00c7be','#ff2d92','#5ac8fa','#7d4cff','#ff6b35','#30d158'
@@ -1993,6 +1920,11 @@ document.getElementById('newMatchBtn').addEventListener('click', () => {
 // ============================================================
 // HISTORY
 // ============================================================
+// Chiudi modal stanza cliccando fuori
+document.getElementById('roomModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRoomModal();
+});
+
 // ============================================================
 // PAGAMENTI — debiti minimi
 // ============================================================
@@ -2000,6 +1932,72 @@ document.getElementById('newMatchBtn').addEventListener('click', () => {
 // I debiti pendenti sono salvati come lista di { from, to, amount }
 // Non dipendono dalle partite: si accumulano e si rimuovono manualmente con "Saldato"
 let pendingDebts = JSON.parse(Store.get('ct_debts') || '[]');
+
+// ============================================================
+// STANZE
+// ============================================================
+let currentRoom = Store.get('ct_room') || 'DIOGAI';
+
+function col(collectionName) {
+  if (!db) return null;
+  return db.collection('rooms').doc(currentRoom).collection(collectionName);
+}
+
+function setRoom(roomName) {
+  currentRoom = roomName;
+  Store.set('ct_room', roomName);
+  document.getElementById('roomBadgeLabel').textContent = roomName;
+  matches = [];
+  players = [];
+  pendingDebts = [];
+  Store.set('ct_matches', '[]');
+  Store.set('ct_debts', '[]');
+  closeRoomModal();
+  initApp();
+  showToast('🏠 Stanza: ' + roomName);
+}
+
+function openRoomModal() {
+  document.getElementById('roomModal').classList.add('open');
+  renderRoomList();
+  if (currentUser && currentUser.isAdmin) {
+    document.getElementById('adminRoomCreate').style.display = 'block';
+  }
+}
+function closeRoomModal() {
+  document.getElementById('roomModal').classList.remove('open');
+}
+
+async function renderRoomList() {
+  const listEl = document.getElementById('roomList');
+  listEl.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem;">Caricamento...</div>';
+  let rooms = ['DIOGAI'];
+  if (fbOk) {
+    try {
+      const snap = await db.collection('rooms').get();
+      if (!snap.empty) rooms = snap.docs.map(d => d.id);
+      if (!rooms.includes('DIOGAI')) rooms.unshift('DIOGAI');
+    } catch(e) { console.warn('rooms load:', e); }
+  }
+  listEl.innerHTML = rooms.map(r => `
+    <div class="room-option ${r === currentRoom ? 'active-room' : ''}" onclick="setRoom('${r}')">
+      <span>${r}</span>
+      ${r === currentRoom ? '<span class="room-check">✓</span>' : ''}
+    </div>`).join('');
+}
+
+async function createRoom(name) {
+  const clean = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
+  if (!clean) { showToast('Nome non valido'); return; }
+  if (fbOk) {
+    try {
+      await db.collection('rooms').doc(clean).set({ createdAt: new Date().toISOString(), createdBy: currentUser.username });
+    } catch(e) { console.warn('create room:', e); }
+  }
+  document.getElementById('newRoomInput').value = '';
+  setRoom(clean);
+}
+
 
 function saveDebts() {
   Store.set('ct_debts', JSON.stringify(pendingDebts));
