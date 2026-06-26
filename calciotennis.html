@@ -1146,14 +1146,7 @@ async function doLogin() {
   if (fbOk) {
     try {
       // Cerca prima nella stanza corrente, poi nella root (retrocompatibilità)
-      let snap = await col('users').doc(username).get();
-      if (!snap.exists) {
-        snap = await db.collection('users').doc(username).get();
-        // Se trovato nella root, migra automaticamente nella stanza
-        if (snap.exists) {
-          await col('users').doc(username).set(snap.data());
-        }
-      }
+      const snap = await db.collection('users').doc(username).get();
       if (!snap.exists) { showAuthError('Utente non trovato'); return; }
       const userData = snap.data();
       const hash = await hashPassword(password);
@@ -1199,9 +1192,9 @@ async function doRegister() {
 
   if (fbOk) {
     try {
-      const existing = await col('users').doc(username).get();
+      const existing = await db.collection('users').doc(username).get();
       if (existing.exists) { showAuthError('Username già in uso'); return; }
-      await col('users').doc(username).set(userData);
+      await db.collection('users').doc(username).set(userData);
     } catch(e) {
       console.warn('Firebase register failed:', e);
     }
@@ -1262,11 +1255,7 @@ async function tryAutoLogin() {
   }
   if (fbOk) {
     try {
-      let snap = await col('users').doc(saved).get();
-      if (!snap.exists) {
-        snap = await db.collection('users').doc(saved).get();
-        if (snap.exists) await col('users').doc(saved).set(snap.data());
-      }
+      const snap = await db.collection('users').doc(saved).get();
       if (snap.exists) {
         const d = snap.data();
         currentUser = { username: saved, photoURL: d.photoURL || '', createdAt: d.createdAt, isAdmin: saved === ADMIN_USERNAME };
@@ -2533,7 +2522,7 @@ async function renderAdminUsers() {
   let users = [];
   if (fbOk) {
     try {
-      const snap = await col('users').get();
+      const snap = await db.collection('users').get();
       users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch(e) { console.warn(e); }
   } else {
@@ -2595,11 +2584,7 @@ document.getElementById('migrateBtn').addEventListener('click', async () => {
       await col('matches').doc(doc.id).set(doc.data());
       count++;
     }
-    // Migra users
-    const userSnap = await db.collection('users').get();
-    for (const doc of userSnap.docs) {
-      await col('users').doc(doc.id).set(doc.data());
-    }
+    // Utenti globali — non migrati per stanza
     // Migra meta/debts
     try {
       const debts = await db.collection('meta').doc('debts').get();
@@ -2622,7 +2607,7 @@ document.getElementById('migrateBtn').addEventListener('click', async () => {
 async function deleteUser(username) {
   if (!confirm(`Rimuovere ${username}?`)) return;
   if (fbOk) {
-    try { await col('users').doc(username).delete(); } catch(e) { console.warn(e); }
+    try { await db.collection('users').doc(username).delete(); } catch(e) { console.warn(e); }
   }
   const local = JSON.parse(Store.get('ct_users') || '{}');
   delete local[username];
@@ -2648,7 +2633,7 @@ document.getElementById('avatarFileInput').addEventListener('change', async func
     // Salva in Firestore
     if (fbOk) {
       try {
-        await col('users').doc(currentUser.username).update({ photoURL: base64 });
+        await db.collection('users').doc(currentUser.username).update({ photoURL: base64 });
       } catch(e) { console.warn('Firestore photo save failed:', e); }
     }
 
@@ -2698,7 +2683,7 @@ async function initApp() {
   if (fbOk) {
     try {
       // 1. Carica tutti gli utenti registrati e aggiorna la lista giocatori
-      const usersSnap = await col('users').get();
+      const usersSnap = await db.collection('users').get();
       const local = JSON.parse(Store.get('ct_users') || '{}');
       usersSnap.docs.forEach(d => {
         const userData = d.data();
