@@ -2027,9 +2027,11 @@ function recalcDebts(matchData) {
   const loseTeam = matchData.winner === 'A' ? matchData.teamB : matchData.teamA;
   const stake = matchData.stake || 0;
 
-  // Ogni perdente deve la posta a ogni vincitore
+  // Ogni perdente paga stake fisso in totale, diviso equamente tra i vincitori
+  // Es. 2v2 €10: ogni perdente deve €5 a ogni vincitore (non €10 a testa)
+  const perWinner = stake / winTeam.length;
+
   loseTeam.forEach(loser => {
-    const perWinner = stake; // ogni perdente paga stake fisso a OGNI vincitore
     winTeam.forEach(winner => {
       addDebt(loser, winner, perWinner);
     });
