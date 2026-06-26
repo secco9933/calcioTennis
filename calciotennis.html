@@ -422,11 +422,19 @@ body.editing-players .player-chip { cursor: default; }
 .match-score { font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; letter-spacing: .05em; }
 .score-w { color: var(--gold); }
 .score-l { color: var(--text-dim); }
-.match-teams { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.match-team { font-size: .8rem; text-align: center; flex: 1; }
+.match-teams { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+.match-team { font-size: .82rem; display: flex; flex-direction: column; gap: 3px; }
 .match-team.won { color: var(--gold); font-weight: 600; }
 .match-team.lost { color: var(--text-dim); }
+.match-team-player { display: flex; align-items: center; gap: 6px; }
+.match-team-player img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex: none; }
+.match-team-player .mini-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.match-team.won .match-team-player { justify-content: flex-start; }
+.match-team.lost .match-team-player { justify-content: flex-end; }
 .match-stake { font-size: .75rem; color: var(--pitch-light); margin-top: 6px; }
+.score-high { color: var(--gold); font-size: 1.9rem; }
+.score-low { color: var(--text-dim); font-size: 1.5rem; }
+.score-sep { color: var(--text-dim); font-size: 1.2rem; margin: 0 4px; }
 
 /* ===== STATS ===== */
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
@@ -1787,26 +1795,41 @@ function renderHistory() {
     list.innerHTML = '<div class="empty-state">Nessuna partita ancora.<br>Inizia il tuo primo game!</div>';
     return;
   }
+  const localUsers = JSON.parse(Store.get('ct_users') || '{}');
+  const playerRow = (name, side) => {
+    const u = localUsers[String(name).trim().toLowerCase()];
+    const p = players.find(pl => pl.name === String(name).trim().toLowerCase());
+    const color = p ? p.color : '#888';
+    const avatarHtml = (u && u.photoURL)
+      ? `<img src="${u.photoURL}" alt="">`
+      : `<div class="mini-dot" style="background:${color}"></div>`;
+    const nameHtml = `<span>${name}</span>`;
+    return `<div class="match-team-player">${side === 'left' ? avatarHtml + nameHtml : nameHtml + avatarHtml}</div>`;
+  };
   list.innerHTML = matches.slice(0, 30).map(m => {
     const d = new Date(m.date);
     const dateStr = d.toLocaleDateString('it-IT', { day:'2-digit', month:'2-digit', year:'numeric' });
     const timeStr = d.toLocaleTimeString('it-IT', { hour:'2-digit', minute:'2-digit' });
     const winTeam = m.winner === 'A' ? m.teamA : m.teamB;
     const loseTeam = m.winner === 'A' ? m.teamB : m.teamA;
-    const scoreWin = m.winner === 'A' ? m.scoreA : m.scoreB;
-    const scoreLose = m.winner === 'A' ? m.scoreB : m.scoreA;
+    const sA = m.scoreA ?? 0, sB = m.scoreB ?? 0;
+    const scoreLeft = m.winner === 'A' ? sA : sB;
+    const scoreRight = m.winner === 'A' ? sB : sA;
     const gain = m.stake * loseTeam.length;
+    const bellaTag = m.isBella ? ` <span style="font-size:.7rem;padding:1px 6px;border-radius:6px;background:rgba(255,107,53,.2);color:#ff6b35;">🔥 Bella</span>` : '';
     return `<div class="match-item">
       <div class="match-header">
-        <div class="match-date">${dateStr} ${timeStr}</div>
-        <div class="match-score"><span class="score-w">${scoreWin}</span> <span style="color:var(--text-dim)">—</span> <span class="score-l">${scoreLose}</span></div>
+        <div class="match-date">${dateStr} ${timeStr}${bellaTag}</div>
+        <div class="match-score">
+          <span class="score-high">${scoreLeft}</span><span class="score-sep">—</span><span class="score-low">${scoreRight}</span>
+        </div>
       </div>
       <div class="match-teams">
-        <div class="match-team won">🏆 ${winTeam.join(', ')}</div>
-        <div style="font-size:.8rem;color:var(--text-dim)">vs</div>
-        <div class="match-team lost">💀 ${loseTeam.join(', ')}</div>
+        <div class="match-team won">${winTeam.map(n => playerRow(n, 'left')).join('')}</div>
+        <div style="font-size:.75rem;color:var(--text-dim);text-align:center;">vs</div>
+        <div class="match-team lost" style="align-items:flex-end;">${loseTeam.map(n => playerRow(n, 'right')).join('')}</div>
       </div>
-      <div class="match-stake">💰 Posta: €${m.stake.toFixed(2)} — Totale: €${gain.toFixed(2)}</div>
+      <div class="match-stake">💰 €${m.stake.toFixed(2)} a testa — Totale: €${gain.toFixed(2)}</div>
     </div>`;
   }).join('');
 }
