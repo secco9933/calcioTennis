@@ -1387,6 +1387,17 @@ document.getElementById('goToWheelBtn').addEventListener('click', () => {
   wheelCurrentRotation = 0;
   document.getElementById('wheelCanvas').style.transform = 'rotate(0deg)';
   wheelArr = players.filter(p => selectedPlayers.has(p.name));
+
+  // Se sono esattamente 2 giocatori → 1v1, salta la creazione squadre
+  if (wheelArr.length === 2) {
+    teamA = [wheelArr[0].name];
+    teamB = [wheelArr[1].name];
+    renderResultTeams();
+    goToStep(2);
+    showToast('1v1 — inserisci il risultato');
+    return;
+  }
+
   renderWheelTeams();
   updateWheelCanvas();
   updateWheelStatus();
