@@ -1703,22 +1703,55 @@ function switchMode(mode) {
 function renderManualChips() {
   const container = document.getElementById('manualPlayers');
   container.innerHTML = '';
+  const half = Math.floor(wheelArr.length / 2);
+  const countA = wheelArr.filter(p => manualAssign[p.name] === 'A').length;
+  const countB = wheelArr.filter(p => manualAssign[p.name] === 'B').length;
+
   wheelArr.forEach(p => {
     const assign = manualAssign[p.name]; // null | 'A' | 'B'
     const chip = document.createElement('div');
     chip.className = 'manual-chip' + (assign === 'A' ? ' in-a' : assign === 'B' ? ' in-b' : '');
-    chip.innerHTML = `<div class="dot" style="background:${p.color}"></div>
-      <span>${p.name}</span>
-      ${assign ? `<span class="manual-chip-label">SQ. ${assign}</span>` : ''}`;
+
+    const photo = getPlayerPhoto(p.name);
+    const avatarHtml = photo
+      ? `<img class="chip-avatar" src="${photo}" alt="${p.name}">`
+      : `<div class="dot" style="background:${p.color}"></div>`;
+
+    const labelHtml = assign ? `<span class="manual-chip-label">SQ. ${assign}</span>` : '';
+    chip.innerHTML = `${avatarHtml}<span>${p.name}</span>${labelHtml}`;
+
     chip.addEventListener('click', () => {
-      // Cicla: null → A → B → null
       const cur = manualAssign[p.name];
-      manualAssign[p.name] = cur === null ? 'A' : cur === 'A' ? 'B' : null;
+      if (cur === null) {
+        // Assegna alla squadra che ha ancora posti liberi
+        // Prima riempi A fino a half, poi B
+        if (countA < half) {
+          manualAssign[p.name] = 'A';
+        } else {
+          manualAssign[p.name] = 'B';
+        }
+      } else {
+        // Deseleziona
+        manualAssign[p.name] = null;
+      }
       renderManualChips();
       updateManualTeams();
     });
     container.appendChild(chip);
   });
+
+  // Hint dinamico
+  const unassigned = wheelArr.filter(p => manualAssign[p.name] === null).length;
+  const statusEl = document.querySelector('.manual-hint');
+  if (statusEl) {
+    if (unassigned === 0) {
+      statusEl.textContent = 'Squadre complete! Conferma per continuare.';
+    } else {
+      statusEl.textContent = countA < half
+        ? `Seleziona ${half - countA} giocatore/i per la Squadra A`
+        : `Seleziona ${wheelArr.length - half - countB} giocatore/i per la Squadra B`;
+    }
+  }
 }
 
 function updateManualTeams() {
