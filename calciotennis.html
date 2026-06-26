@@ -77,6 +77,49 @@ body {
 .auth-error { color: var(--red); font-size: .82rem; margin-top: 10px; min-height: 18px; text-align: center; }
 .auth-success { color: #5cf080; font-size: .82rem; margin-top: 10px; min-height: 18px; text-align: center; }
 
+/* ===== ROOM SELECTOR ===== */
+.room-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 16px; background: rgba(0,0,0,0.25);
+  border-bottom: 1px solid var(--panel-border);
+  font-size: .78rem;
+}
+.room-badge {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 8px;
+  background: rgba(245,200,66,0.12); border: 1px solid rgba(245,200,66,0.25);
+  color: var(--gold); font-weight: 700; cursor: pointer; letter-spacing: .04em;
+}
+.room-badge:hover { background: rgba(245,200,66,0.2); }
+.room-label { color: var(--text-dim); }
+
+/* ===== ROOM MODAL ===== */
+#roomModal {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center; padding: 20px;
+}
+#roomModal.open { display: flex; }
+.room-modal-box {
+  background: #0f3a1a; border: 1px solid var(--panel-border);
+  border-radius: 20px; padding: 24px; width: 100%; max-width: 340px;
+}
+.room-modal-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem;
+  color: var(--gold); letter-spacing: .06em; margin-bottom: 16px;
+}
+.room-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.room-option {
+  padding: 11px 14px; border-radius: 12px; cursor: pointer;
+  border: 1.5px solid var(--panel-border); background: var(--panel);
+  color: var(--text); font-weight: 600; font-size: .9rem;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: border-color .12s, background .12s;
+}
+.room-option:hover { border-color: var(--gold); background: rgba(245,200,66,0.08); }
+.room-option.active-room { border-color: var(--gold); color: var(--gold); }
+.room-option .room-check { color: var(--gold); font-size: .9rem; }
+
 /* ===== PROFILO ===== */
 .profile-avatar-wrap { text-align: center; margin-bottom: 16px; }
 .profile-avatar {
@@ -681,6 +724,31 @@ select.ct-input { -webkit-appearance: none; appearance: none; }
       <button id="logoutBtn" style="background:none;border:none;color:var(--text-dim);font-size:.75rem;cursor:pointer;padding:4px 8px;border-radius:8px;border:1px solid var(--panel-border);">Esci</button>
     </div>
   </header>
+  <div class="room-bar">
+    <span class="room-label">Stanza:</span>
+    <div class="room-badge" id="roomBadge" onclick="openRoomModal()">
+      <span>🏠</span><span id="roomBadgeLabel">—</span>
+    </div>
+  </div>
+
+  <!-- ROOM MODAL -->
+  <div id="roomModal">
+    <div class="room-modal-box">
+      <div class="room-modal-title">🏠 Seleziona stanza</div>
+      <div class="room-list" id="roomList"></div>
+      <div id="adminRoomCreate" style="display:none;">
+        <div class="divider"></div>
+        <div class="section-label" style="margin-bottom:8px;">Nuova stanza (admin)</div>
+        <div class="input-row">
+          <input class="ct-input" id="newRoomInput" type="text" placeholder="Nome stanza…" maxlength="20" autocomplete="off">
+          <button class="btn-gold" id="createRoomBtn">+</button>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn-ghost" onclick="closeRoomModal()" style="width:100%;">Chiudi</button>
+      </div>
+    </div>
+  </div>
 
   <nav class="tab-bar">
     <button class="tab-btn active" data-tab="partita">🏟 Partita</button>
@@ -939,6 +1007,80 @@ const firebaseConfig = {
 // ============================================================
 const INVITE_CODE = "campo2025";  // ← cambia il codice invito qui
 const ADMIN_USERNAME = "secco";   // ← il tuo username admin
+
+// ============================================================
+// STANZE
+// ============================================================
+let currentRoom = Store.get('ct_room') || 'DIOGAI'; // stanza di default
+
+// Helper: ritorna la sub-collection della stanza corrente
+function col(collectionName) {
+  if (!db) return null;
+  return db.collection('rooms').doc(currentRoom).collection(collectionName);
+}
+
+function setRoom(roomName) {
+  currentRoom = roomName;
+  Store.set('ct_room', roomName);
+  document.getElementById('roomBadgeLabel').textContent = roomName;
+  // Resetta dati locali e ricarica
+  matches = [];
+  players = [];
+  pendingDebts = [];
+  Store.set('ct_matches', '[]');
+  Store.set('ct_debts', '[]');
+  closeRoomModal();
+  initApp();
+  showToast('🏠 Stanza: ' + roomName);
+}
+
+function openRoomModal() {
+  document.getElementById('roomModal').classList.add('open');
+  renderRoomList();
+  // Mostra creazione solo per admin
+  if (currentUser && currentUser.isAdmin) {
+    document.getElementById('adminRoomCreate').style.display = 'block';
+  }
+}
+function closeRoomModal() {
+  document.getElementById('roomModal').classList.remove('open');
+}
+
+async function renderRoomList() {
+  const listEl = document.getElementById('roomList');
+  listEl.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem;">Caricamento...</div>';
+  let rooms = ['DIOGAI']; // default sempre presente
+  if (fbOk) {
+    try {
+      const snap = await db.collection('rooms').get();
+      if (!snap.empty) rooms = snap.docs.map(d => d.id);
+      if (!rooms.includes('DIOGAI')) rooms.unshift('DIOGAI');
+    } catch(e) { console.warn('rooms load:', e); }
+  }
+  listEl.innerHTML = rooms.map(r => `
+    <div class="room-option ${r === currentRoom ? 'active-room' : ''}" onclick="setRoom('${r}')">
+      <span>${r}</span>
+      ${r === currentRoom ? '<span class="room-check">✓</span>' : ''}
+    </div>`).join('');
+}
+
+async function createRoom(name) {
+  const clean = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
+  if (!clean) { showToast('Nome non valido'); return; }
+  if (fbOk) {
+    try {
+      // Crea un documento segnaposto nella stanza
+      await db.collection('rooms').doc(clean).set({ createdAt: new Date().toISOString(), createdBy: currentUser.username });
+    } catch(e) { console.warn('create room:', e); }
+  }
+  document.getElementById('newRoomInput').value = '';
+  setRoom(clean);
+}
+
+// Chiudi modal cliccando fuori
+document.getElementById('roomModal').addEventListener('click', function(e) {
+  if (e.target === this) closeRoomModal();
+});
 const PALETTE = [
   '#ff3b30','#3a9fff','#34c759','#ffcc00','#af52de',
   '#ff9500','#00c7be','#ff2d92','#5ac8fa','#7d4cff','#ff6b35','#30d158'
@@ -1067,7 +1209,7 @@ async function doLogin() {
 
   if (fbOk) {
     try {
-      const snap = await db.collection('users').doc(username).get();
+      const snap = await col('users').doc(username).get();
       if (!snap.exists) { showAuthError('Utente non trovato'); return; }
       const userData = snap.data();
       const hash = await hashPassword(password);
@@ -1088,6 +1230,7 @@ async function doLogin() {
   }
 
   Store.set('ct_session', username);
+  currentRoom = Store.get('ct_room') || 'DIOGAI';
   enterApp();
 }
 
@@ -1108,9 +1251,9 @@ async function doRegister() {
 
   if (fbOk) {
     try {
-      const existing = await db.collection('users').doc(username).get();
+      const existing = await col('users').doc(username).get();
       if (existing.exists) { showAuthError('Username già in uso'); return; }
-      await db.collection('users').doc(username).set(userData);
+      await col('users').doc(username).set(userData);
     } catch(e) {
       console.warn('Firebase register failed:', e);
     }
@@ -1145,10 +1288,18 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   document.getElementById('loginPassword').value = '';
 });
 
+document.getElementById('createRoomBtn').addEventListener('click', () => {
+  createRoom(document.getElementById('newRoomInput').value);
+});
+document.getElementById('newRoomInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') createRoom(document.getElementById('newRoomInput').value);
+});
+
 // Entra nell'app dopo login
 function enterApp() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
+  document.getElementById('roomBadgeLabel').textContent = currentRoom;
   initApp();
 }
 
@@ -1163,7 +1314,7 @@ async function tryAutoLogin() {
   }
   if (fbOk) {
     try {
-      const snap = await db.collection('users').doc(saved).get();
+      const snap = await col('users').doc(saved).get();
       if (snap.exists) {
         const d = snap.data();
         currentUser = { username: saved, photoURL: d.photoURL || '', createdAt: d.createdAt, isAdmin: saved === ADMIN_USERNAME };
@@ -1743,7 +1894,7 @@ function saveMatch() {
   saveLocal();
 
   if (fbOk) {
-    db.collection('matches').add(matchData).catch(e => console.warn('Firebase:', e));
+    col('matches').add(matchData).catch(e => console.warn('Firebase:', e));
   }
 
   // Ricalcola debiti dopo ogni partita
@@ -1853,7 +2004,7 @@ let pendingDebts = JSON.parse(Store.get('ct_debts') || '[]');
 function saveDebts() {
   Store.set('ct_debts', JSON.stringify(pendingDebts));
   if (fbOk) {
-    db.collection('meta').doc('debts').set({ debts: pendingDebts })
+    col('meta').doc('debts').set({ debts: pendingDebts })
       .catch(e => console.warn('Firebase debts save:', e));
   }
 }
@@ -1945,7 +2096,7 @@ function minimizeTransactions(balance) {
 async function loadDebtsFromFirebase() {
   if (!fbOk) return;
   try {
-    const snap = await db.collection('meta').doc('debts').get();
+    const snap = await col('meta').doc('debts').get();
     if (snap.exists && snap.data().debts) {
       pendingDebts = snap.data().debts;
       Store.set('ct_debts', JSON.stringify(pendingDebts));
@@ -2359,7 +2510,7 @@ async function renderAdminUsers() {
   let users = [];
   if (fbOk) {
     try {
-      const snap = await db.collection('users').get();
+      const snap = await col('users').get();
       users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch(e) { console.warn(e); }
   } else {
@@ -2390,17 +2541,20 @@ async function clearHistory() {
   // Cancella da Firestore
   if (fbOk) {
     try {
-      const snap = await db.collection('matches').get();
+      const snap = await col('matches').get();
       const batch = db.batch();
       snap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
+      try { await col('meta').doc('debts').delete(); } catch(e) {}
     } catch(e) { console.warn('Errore cancellazione Firestore:', e); }
   }
 
   // Cancella in locale
   matches = [];
+  pendingDebts = [];
+  Store.set('ct_debts', '[]');
   saveLocal();
-  showToast('✅ Storico cancellato');
+  showToast('✅ Storico e debiti cancellati');
   renderProfile();
 }
 
@@ -2409,7 +2563,7 @@ document.getElementById('clearHistoryBtn').addEventListener('click', clearHistor
 async function deleteUser(username) {
   if (!confirm(`Rimuovere ${username}?`)) return;
   if (fbOk) {
-    try { await db.collection('users').doc(username).delete(); } catch(e) { console.warn(e); }
+    try { await col('users').doc(username).delete(); } catch(e) { console.warn(e); }
   }
   const local = JSON.parse(Store.get('ct_users') || '{}');
   delete local[username];
@@ -2435,7 +2589,7 @@ document.getElementById('avatarFileInput').addEventListener('change', async func
     // Salva in Firestore
     if (fbOk) {
       try {
-        await db.collection('users').doc(currentUser.username).update({ photoURL: base64 });
+        await col('users').doc(currentUser.username).update({ photoURL: base64 });
       } catch(e) { console.warn('Firestore photo save failed:', e); }
     }
 
@@ -2485,7 +2639,7 @@ async function initApp() {
   if (fbOk) {
     try {
       // 1. Carica tutti gli utenti registrati e aggiorna la lista giocatori
-      const usersSnap = await db.collection('users').get();
+      const usersSnap = await col('users').get();
       const local = JSON.parse(Store.get('ct_users') || '{}');
       usersSnap.docs.forEach(d => {
         const userData = d.data();
@@ -2500,7 +2654,7 @@ async function initApp() {
       saveLocal();
 
       // 2. Carica matches
-      const matchSnap = await db.collection('matches').orderBy('date','desc').get();
+      const matchSnap = await col('matches').orderBy('date','desc').get();
       const fbMatches = matchSnap.docs.map(d => normalizeMatch(d.data()));
       const localIds = new Set(matches.map(m=>m.id));
       fbMatches.forEach(m => { if(!localIds.has(m.id)) matches.push(m); });
