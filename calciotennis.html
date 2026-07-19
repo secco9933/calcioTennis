@@ -2314,7 +2314,7 @@ function renderHistory() {
         <div class="match-team lost" style="align-items:flex-end;">${loseTeam.map(n => playerRow(n, 'right')).join('')}</div>
       </div>
       <div class="match-stake">💰 €${m.stake.toFixed(2)} a testa — Totale: €${gain.toFixed(2)}</div>
-      <button class="match-delete-btn" onclick="deleteMatch(${idx})">🗑️ Elimina questa partita</button>
+      ${currentUser && currentUser.isAdmin ? `<button class="match-delete-btn" style="display:block;" onclick="deleteMatch(${idx})">🗑️ Elimina questa partita</button>` : ''}
     </div>`;
   }).join('');
 }
